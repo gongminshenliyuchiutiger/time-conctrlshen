@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>時間神場控顯示系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+        body {
+            position: relative;
+            background: linear-gradient(135deg, #1e3a8a, #4c1d95, #5b21b6);
+            transition: background-color 0.3s ease;
+        }
+        /* --- 全局容器 --- */
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 1rem;
+            position: relative;
+            z-index: 10;
+        }
+        /* --- 計時器響應式字體 --- */
+        .timer-display {
+            font-size: clamp(6rem, 25vw, 15rem);
+            font-weight: 900;
+            line-height: 1;
+            text-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        /* --- 背景漂浮吉祥物 --- */
+        #background-animations {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none;
+        }
+        .floating-mascot {
+            position: absolute;
+            bottom: -250px;
+            opacity: 0;
+            animation: float-up linear infinite;
+        }
+        @keyframes float-up {
+            from {
+                transform: translateY(0) translateX(var(--x-pos)) rotate(0deg);
+                opacity: var(--start-opacity);
+            }
+            to {
+                transform: translateY(-130vh) translateX(calc(var(--x-pos) + var(--drift))) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* --- 時間到警示效果 --- */
+        body.times-up-alert {
+            animation: screen-shake 0.3s infinite, warning-flash 0.5s infinite alternate;
+        }
+        @keyframes screen-shake {
+            0%, 100% { transform: translate(0, 0); } 25% { transform: translate(2px, -2px); }
+            50% { transform: translate(-2px, 2px); } 75% { transform: translate(2px, 2px); }
+        }
+        @keyframes warning-flash {
+            from { background-color: #ef4444; } to { background-color: #b91c1c; }
+        }
+
+        /* --- 右下角吉祥物 --- */
+        #mascot-container {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            z-index: 100;
+            cursor: pointer;
+        }
+        #mascot {
+            width: 150px; height: 150px; /* 手機尺寸 */
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: neon-glow 2s linear infinite;
+        }
+        @media (min-width: 768px) { /* 平板及以上尺寸 */
+            #mascot { width: 240px; height: 240px; }
+        }
+        #mascot:hover { animation: neon-glow 2s linear infinite, jiggle 0.5s infinite; }
+        @keyframes neon-glow {
+            0%, 100% { filter: drop-shadow(0 0 5px #fff) drop-shadow(0 0 10px #ff00de); }
+            50% { filter: drop-shadow(0 0 5px #fff) drop-shadow(0 0 10px #00ffde); }
+        }
+        @keyframes jiggle {
+            0%, 100% { transform: rotate(-1deg) scale(1.05); } 50% { transform: rotate(1deg) scale(1.05); }
+        }
+        #mascot-speech-bubble {
+            position: absolute; bottom: 100%; right: 20px; width: max-content; max-width: 200px;
+            background-color: white; color: #1f2937; padding: 0.75rem; border-radius: 0.75rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0;
+            transform: translateY(10px) scale(0.9); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+        }
+        #mascot-speech-bubble.show { opacity: 1; transform: translateY(0) scale(1); }
+
+        /* --- 進度條 --- */
+        #progress-bar {
+            position: fixed; top: 0; left: 0; height: 5px;
+            background: linear-gradient(90deg, #34d399, #60a5fa, #a78bfa);
+            width: 100%; z-index: 200; transition: width 0.5s ease-out;
+        }
+
+        /* --- 全螢幕模式隱藏控制項 --- */
+        body.fullscreen-mode .hide-on-fullscreen {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="background-animations"></div>
+    <div id="progress-bar"></div>
+    <audio id="alarmSound" src="audio/alarm.mp3" preload="auto"></audio>
+
+    <button id="fullscreen-toggle" title="切換全螢幕" class="fixed top-4 right-4 z-50 bg-white/10 hover:bg-white/20 text-white rounded-full w-12 h-12 flex items-center justify-center transition-colors">
+        <i id="icon-expand" class="fas fa-expand fa-lg"></i>
+        <i id="icon-compress" class="fas fa-compress fa-lg" style="display: none;"></i>
+    </button>
+    
+    <div class="main-container text-white">
+        <!-- Header -->
+        <!-- 【修改】移除 hide-on-fullscreen class，讓標題在全螢幕模式下顯示 -->
+        <header class="text-center">
+            <h1 class="text-3xl md:text-5xl font-bold bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">時間神場控顯示系統</h1>
+            <p class="text-base md:text-xl text-blue-200 mt-1">專業討論時間管理工具</p>
+        </header>
+
+        <!-- Main Content (takes up remaining space) -->
+        <main class="flex-1 flex flex-col items-center justify-center space-y-2 md:space-y-4">
+            <div id="activityInputWrapper" class="w-full max-w-2xl px-4">
+                
+                <input type="text" id="activityInput" placeholder="請輸入階段目標..." class="w-full px-4 py-3 md:py-4 text-xl md:text-3xl text-white bg-white/10 placeholder-gray-300 rounded-2xl shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-400 focus:bg-white/20 text-center border border-white/30 transition-all">
+            </div>
+
+            <div class="text-center">
+                <div id="timerDisplay" class="timer-display">00:00</div>
+                <div id="timerStatus" class="text-xl md:text-2xl font-semibold text-blue-200 h-8">準備開始</div>
+            </div>
+
+            <!-- All Controls Wrapper (這些控制項仍會在全螢幕時隱藏) -->
+            <div class="w-full max-w-4xl space-y-3 md:space-y-4 hide-on-fullscreen px-4">
+                <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 md:gap-4">
+                    <button onclick="setTimer(3)" class="preset-btn bg-green-500 hover:bg-green-600 font-bold py-3 rounded-xl text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">3分鐘</button>
+                    <button onclick="setTimer(5)" class="preset-btn bg-blue-500 hover:bg-blue-600 font-bold py-3 rounded-xl text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">5分鐘</button>
+                    <button onclick="setTimer(10)" class="preset-btn bg-purple-500 hover:bg-purple-600 font-bold py-3 rounded-xl text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">10分鐘</button>
+                    <button onclick="setTimer(15)" class="preset-btn bg-orange-500 hover:bg-orange-600 font-bold py-3 rounded-xl text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">15分鐘</button>
+                    <button onclick="setTimer(20)" class="preset-btn bg-red-500 hover:bg-red-600 font-bold py-3 rounded-xl text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">20分鐘</button>
+                    <button onclick="setTimer(30)" class="preset-btn bg-pink-500 hover:bg-pink-600 font-bold py-3 rounded-xl text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">30分鐘</button>
+                </div>
+                <div class="flex items-center space-x-2 flex-wrap justify-center">
+                    <label class="text-base md:text-lg font-semibold">自定義：</label>
+                    <input type="number" id="customMinutes" min="0" placeholder="分" class="px-2 py-2 text-base md:text-lg text-gray-800 bg-white rounded-lg w-16 md:w-20 text-center">
+                    <span class="text-sm md:text-base">分</span>
+                    <input type="number" id="customSeconds" min="0" max="59" placeholder="秒" class="px-2 py-2 text-base md:text-lg text-gray-800 bg-white rounded-lg w-16 md:w-20 text-center">
+                    <span class="text-sm md:text-base">秒</span>
+                    <button onclick="setCustomTimer()" class="bg-indigo-500 hover:bg-indigo-600 font-bold py-2 px-4 md:px-6 rounded-lg text-base md:text-lg transition-transform transform hover:scale-105 shadow-lg">設定</button>
+                </div>
+            </div>
+             <div class="flex space-x-4 hide-on-fullscreen">
+                <button id="startBtn" onclick="startTimer()" class="bg-green-600 hover:bg-green-700 font-bold py-2 px-6 md:py-3 md:px-8 rounded-xl text-lg md:text-xl transition-transform transform hover:scale-105 shadow-lg">開始</button>
+                <button id="pauseBtn" onclick="pauseTimer()" class="bg-yellow-500 hover:bg-yellow-600 font-bold py-2 px-6 md:py-3 md:px-8 rounded-xl text-lg md:text-xl transition-transform transform hover:scale-105 shadow-lg" style="display: none;">暫停</button>
+                <button id="resumeBtn" onclick="resumeTimer()" class="bg-blue-600 hover:bg-blue-700 font-bold py-2 px-6 md:py-3 md:px-8 rounded-xl text-lg md:text-xl transition-transform transform hover:scale-105 shadow-lg" style="display: none;">繼續</button>
+                <button onclick="resetTimer()" class="bg-red-600 hover:bg-red-700 font-bold py-2 px-6 md:py-3 md:px-8 rounded-xl text-lg md:text-xl transition-transform transform hover:scale-105 shadow-lg">重置</button>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <!-- 【修改】移除 hide-on-fullscreen class，讓頁腳在全螢幕模式下顯示 -->
+        <footer class="text-center py-2 border-t border-gray-600/30">
+            <p class="text-xs text-gray-400">Copyright © Liyuchiutiger Gongminshen</p>
+        </footer>
+    </div>
+
+    <!-- 【修改】移除 hide-on-fullscreen class，讓吉祥物在全螢幕模式下顯示 -->
+    <div id="mascot-container">
+        <div id="mascot-speech-bubble"></div>
+        <img id="mascot" src="image/LiyuChill.svg" alt="吉祥物">
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <script>
+        // --- DOM Elements & State ---
+        const dom = {
+            body: document.body, timerDisplay: document.getElementById('timerDisplay'),
+            timerStatus: document.getElementById('timerStatus'), activityInput: document.getElementById('activityInput'),
+            startBtn: document.getElementById('startBtn'), pauseBtn: document.getElementById('pauseBtn'),
+            resumeBtn: document.getElementById('resumeBtn'), alarmSound: document.getElementById('alarmSound'),
+            progressBar: document.getElementById('progress-bar'),
+            fullscreen: { btn: document.getElementById('fullscreen-toggle'), iconExpand: document.getElementById('icon-expand'), iconCompress: document.getElementById('icon-compress') },
+            mascot: { container: document.getElementById('mascot-container'), img: document.getElementById('mascot'), speechBubble: document.getElementById('mascot-speech-bubble') }
+        };
+        let state = { timerInterval: null, totalSeconds: 0, remainingSeconds: 0, isRunning: false, isPaused: false };
+        
+        // --- Timer Core ---
+        function updateDisplay() {
+            const minutes = Math.floor(state.remainingSeconds / 60);
+            const seconds = state.remainingSeconds % 60;
+            dom.timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            dom.progressBar.style.width = state.totalSeconds > 0 ? `${(state.remainingSeconds / state.totalSeconds) * 100}%` : '100%';
+        }
+        function tick() {
+            state.remainingSeconds--;
+            updateDisplay();
+            if (state.remainingSeconds < 0) { // Changed to < 0 to show 00:00
+                clearInterval(state.timerInterval);
+                state.remainingSeconds = 0;
+                dom.timerStatus.textContent = '⏰ 時間到！';
+                dom.body.classList.add('times-up-alert');
+                dom.alarmSound.loop = true;
+                dom.alarmSound.play().catch(e => console.error("Audio play failed:", e));
+                resetTimerState();
+            }
+        }
+        function setTimer(minutes) {
+            state.totalSeconds = minutes * 60;
+            state.remainingSeconds = state.totalSeconds;
+            updateDisplay();
+            dom.timerStatus.textContent = `已設定 ${minutes} 分鐘`;
+            resetTimerState();
+            cleanUpEffects();
+        }
+        function setCustomTimer() {
+            const minutes = parseInt(document.getElementById('customMinutes').value) || 0;
+            const seconds = parseInt(document.getElementById('customSeconds').value) || 0;
+            if (minutes === 0 && seconds === 0) return;
+            state.totalSeconds = minutes * 60 + seconds;
+            state.remainingSeconds = state.totalSeconds;
+            updateDisplay();
+            dom.timerStatus.textContent = `已設定 ${minutes > 0 ? `${minutes}分` : ''}${seconds > 0 ? `${seconds}秒` : ''}`;
+            resetTimerState();
+            cleanUpEffects();
+            document.getElementById('customMinutes').value = '';
+            document.getElementById('customSeconds').value = '';
+        }
+        function startTimer() {
+            if (state.remainingSeconds <= 0 || state.isRunning) return;
+            cleanUpEffects();
+            state.isRunning = true;
+            state.isPaused = false;
+            dom.timerStatus.textContent = '計時進行中...';
+            dom.startBtn.style.display = 'none';
+            dom.pauseBtn.style.display = 'inline-block';
+            state.timerInterval = setInterval(tick, 1000);
+        }
+        function pauseTimer() {
+            if (!state.isRunning) return;
+            clearInterval(state.timerInterval);
+            state.isPaused = true; state.isRunning = false;
+            dom.timerStatus.textContent = '⏸️ 已暫停';
+            dom.pauseBtn.style.display = 'none';
+            dom.resumeBtn.style.display = 'inline-block';
+        }
+        function resumeTimer() {
+            if (!state.isPaused) return;
+            state.isPaused = false; state.isRunning = true;
+            dom.timerStatus.textContent = '計時進行中...';
+            dom.resumeBtn.style.display = 'none';
+            dom.pauseBtn.style.display = 'inline-block';
+            state.timerInterval = setInterval(tick, 1000);
+        }
+        function resetTimer() {
+            clearInterval(state.timerInterval);
+            state.totalSeconds = 0; state.remainingSeconds = 0;
+            updateDisplay(); resetTimerState();
+            dom.timerStatus.textContent = '計時器已歸零';
+            dom.activityInput.value = '';
+            cleanUpEffects();
+        }
+        function resetTimerState() {
+            state.isRunning = false; state.isPaused = false;
+            dom.startBtn.style.display = 'inline-block';
+            dom.pauseBtn.style.display = 'none';
+            dom.resumeBtn.style.display = 'none';
+        }
+        function cleanUpEffects() {
+            dom.body.classList.remove('times-up-alert');
+            dom.alarmSound.pause();
+            dom.alarmSound.currentTime = 0;
+        }
+
+        // --- Mascot Logic ---
+        let mascotState = { scale: 1, shrinkTimer: null, bubbleTimeout: null, autoBubbleInterval: null,
+            messages: ["專注當下，時間就是你的超能力！", "加油！每個偉大的想法都需要時間醞釀。", "時間正在滴答作響，讓我們一起完成目標！", "有我在，時間管理變得很簡單！", "休息一下，喝口水，效果會更好喔！", "你做得很好，繼續保持！"]
+        };
+        function showRandomMascotMessage() {
+            clearTimeout(mascotState.bubbleTimeout);
+            dom.mascot.speechBubble.textContent = mascotState.messages[Math.floor(Math.random() * mascotState.messages.length)];
+            dom.mascot.speechBubble.classList.add('show');
+            mascotState.bubbleTimeout = setTimeout(() => dom.mascot.speechBubble.classList.remove('show'), 5000);
+        }
+        dom.mascot.container.addEventListener('click', () => {
+            clearTimeout(mascotState.shrinkTimer);
+            mascotState.scale += 0.1;
+            dom.mascot.img.style.transform = `scale(${mascotState.scale})`;
+            const rect = dom.mascot.img.getBoundingClientRect();
+            confetti({ particleCount: 50, spread: 50, origin: { x: (rect.left + rect.width / 2) / window.innerWidth, y: (rect.top + rect.height / 2) / window.innerHeight }, colors: ['#26ccff', '#a25afd', '#ff5e7e', '#88ff5a', '#fcff42'] });
+            mascotState.shrinkTimer = setTimeout(() => { mascotState.scale = 1; dom.mascot.img.style.transform = 'scale(1)'; }, 1500);
+        });
+
+        // --- Background Animation ---
+        function createFloatingMascots() {
+            const container = document.getElementById('background-animations');
+            const mascotCount = 20; 
+            for (let i = 0; i < mascotCount; i++) {
+                const mascotEl = document.createElement('img');
+                mascotEl.src = 'image/LiyuChill.svg';
+                mascotEl.className = 'floating-mascot';
+                mascotEl.style.width = `${Math.random() * 120 + 80}px`;
+                mascotEl.style.setProperty('--x-pos', `${Math.random() * 100}vw`);
+                mascotEl.style.setProperty('--start-opacity', Math.random() * 0.15 + 0.05);
+                mascotEl.style.animationDuration = `${Math.random() * 25 + 20}s`;
+                mascotEl.style.animationDelay = `${Math.random() * 20}s`;
+                mascotEl.style.setProperty('--drift', `${(Math.random() - 0.5) * 20}vw`);
+                container.appendChild(mascotEl);
+            }
+        }
+        
+        // --- Fullscreen Logic ---
+        dom.fullscreen.btn.addEventListener('click', () => {
+            const isFullscreen = dom.body.classList.toggle('fullscreen-mode');
+            dom.fullscreen.iconExpand.style.display = isFullscreen ? 'none' : 'block';
+            dom.fullscreen.iconCompress.style.display = isFullscreen ? 'block' : 'none';
+        });
+
+        // --- Initial Setup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDisplay();
+            createFloatingMascots();
+            mascotState.autoBubbleInterval = setInterval(showRandomMascotMessage, Math.random() * 20000 + 25000);
+            document.getElementById('customMinutes').addEventListener('keypress', e => e.key === 'Enter' && setCustomTimer());
+            document.getElementById('customSeconds').addEventListener('keypress', e => e.key === 'Enter' && setCustomTimer());
+            // 【修正】確保在載入時移除全螢幕模式
+            dom.body.classList.remove('fullscreen-mode');
+        });
+    </script>
+</body>
+</html>
