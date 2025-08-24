@@ -183,7 +183,7 @@
     <!-- 【修改】移除 hide-on-fullscreen class，讓吉祥物在全螢幕模式下顯示 -->
     <div id="mascot-container">
         <div id="mascot-speech-bubble"></div>
-        <img id="mascot" src="image/LiyuChill.svg" alt="吉祥物">
+        <img id="mascot" src="image/LiyuChillGuy.svg" alt="吉祥物LiyuChillGuy">
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
@@ -312,7 +312,7 @@
             const mascotCount = 20; 
             for (let i = 0; i < mascotCount; i++) {
                 const mascotEl = document.createElement('img');
-                mascotEl.src = 'image/LiyuChill.svg';
+                mascotEl.src = 'image/LiyuChillGuy.svg';
                 mascotEl.className = 'floating-mascot';
                 mascotEl.style.width = `${Math.random() * 120 + 80}px`;
                 mascotEl.style.setProperty('--x-pos', `${Math.random() * 100}vw`);
